@@ -1,0 +1,23 @@
+# Render blueprint for the triage backend (Docker web service).
+services:
+  - type: web
+    name: orbit-triage-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: LLM_MODE
+        value: cloud            # Ollama cannot run on a CPU web service; use an OpenAI-compatible endpoint
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: llama-3.1-8b-instant
+      - key: GROQ_API_KEY
+        sync: false             # set in the Render dashboard
+      - key: CORS_ORIGINS
+        sync: false             # e.g. https://your-app.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

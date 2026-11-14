@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  /* Instrument Sans for the interface, Newsreader for the written briefing, JetBrains Mono only for log text */
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* "Orbit" periwinkle: the one colour that means "you can open this / this is evidence" */
+  --color-orbit-50: #f1f3ff;
+  --color-orbit-100: #e2e6ff;
+  --color-orbit-200: #c7cdff;
+  --color-orbit-300: #a8b1ff;
+  --color-orbit-400: #8c97fb;
+  --color-orbit-500: #6f7df0;
+  --color-orbit-600: #5866dc;
+  --color-orbit-700: #4551bd;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #020617;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+::selection {
+  background: rgb(111 125 240 / 0.35);
+}
+
+/* Evidence inspector: the cited line glows twice, then stays highlighted */
+@keyframes evidence-pulse {
+  0% { box-shadow: inset 0 0 0 9999px rgb(111 125 240 / 0.35); }
+  100% { box-shadow: inset 0 0 0 9999px rgb(111 125 240 / 0); }
+}
+.evidence-target {
+  animation: evidence-pulse 1.6s ease-out 2;
+}
+
+/* one orchestrated entrance: the dashboard appears once triage finishes */
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.reveal { animation: reveal 0.5s ease-out both; }
+
+/* ribbon tick flash when its timeline entry is opened */
+@keyframes flash-entry {
+  0% { background-color: rgb(111 125 240 / 0.22); }
+  100% { background-color: transparent; }
+}
+.flash-entry { animation: flash-entry 1.4s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .evidence-target, .reveal, .flash-entry { animation: none; }
+}
+
+/* sheet entrance (no tailwindcss-animate dependency) */
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.data-\[state\=open\]\:slide-in-from-right[data-state="open"] { animation: slide-in-right 0.22s ease-out; }
+.data-\[state\=open\]\:fade-in[data-state="open"] { animation: fade-in 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .data-\[state\=open\]\:slide-in-from-right[data-state="open"], .data-\[state\=open\]\:fade-in[data-state="open"] { animation: none; }
+}
+
+/* hatched band for stretches with no logs */
+.gap-hatch {
+  background-image: repeating-linear-gradient(135deg, rgb(148 163 184 / 0.28) 0 2px, transparent 2px 6px);
+}
+
+/* rendered markdown report */
+.report-md h1 { font-family: var(--font-serif); font-size: 1.35rem; font-weight: 600; color: #fff; margin: 0.25rem 0 0.75rem; line-height: 1.25; }
+.report-md h2 { font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin: 1.75rem 0 0.5rem; padding-bottom: 0.3rem; border-bottom: 1px solid #1e293b; }
+.report-md p, .report-md li { color: #cbd5e1; line-height: 1.65; }
+.report-md ul { list-style: disc; padding-left: 1.25rem; }
+.report-md ol { list-style: decimal; padding-left: 1.25rem; }
+.report-md li { margin: 0.25rem 0; }
+.report-md em { color: #94a3b8; }
+.report-md strong { color: #f1f5f9; }
+.report-md table { width: 100%; font-size: 0.75rem; border-collapse: collapse; display: block; overflow-x: auto; }
+.report-md th, .report-md td { border-bottom: 1px solid #1e293b; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+.report-md th { color: #64748b; font-weight: 500; }

@@ -1,0 +1,63 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: orbit-soc-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - LLM_MODE=${LLM_MODE:-auto}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.1-8b-instant}
+      - LLM_PSEUDONYMIZE=true
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - DATA_DIR=/app/security_triage_data
+      - EDGE_PACK_DIR=/app/backend/datasets/edge_cases
+    extra_hosts:
+      # Allows backend container to connect to Ollama running on the host machine
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: orbit-soc-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  # Optional: Embedded Ollama container for self-contained local evaluation
+  # To run with embedded Ollama: docker compose --profile ollama up
+  ollama:
+    image: ollama/ollama:latest
+    container_name: orbit-soc-ollama
+    profiles:
+      - ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
