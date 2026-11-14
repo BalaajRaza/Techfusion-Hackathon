@@ -32,40 +32,40 @@ The user requested an assessment of using a local LLM via **Ollama**, covering s
 - **The Challenge:** Open-weights 7B/8B models (such as `llama3.1:8b-instruct` or `qwen2.5:7b-instruct`) struggle with complex multi-hop mathematical reasoning, long-range timeline sorting, and strict JSON schema adherence when fed thousands of unstructured raw log lines.
 - **The Architectural Solution:** In our pipeline, **the local LLM is never asked to correlate logs or deduce timelines.** Python code normalizes timestamps, matches IP addresses, checks DHCP lease intervals, and derives the severity. The LLM only receives a structured JSON object with pre-verified claims (e.g., `Claim 1: "User amalik logged in from RO IP 198.51.100.77" [11_vpn_auth_log.md:L12]`). At this specific task—summarizing pre-verified facts—`llama3.1:8b` and `qwen2.5:7b` achieve **near-GPT-4 level quality**.
 
-### 2.3 Deployment Assessment (Ollama on Vercel & Render)
-- **Vercel:** Vercel is a serverless frontend/edge platform. It cannot run Ollama, as serverless functions have short execution limits (10–60s) and no GPU access.
-- **Render:** Render's standard web services run on CPU instances. Running Ollama on a shared CPU instance yields **1 to 3 tokens per second**, causing timeouts during hackathon demos and high memory footprint (OOM crashes). Render GPU instances are costly and take time to provision.
+### 2.3 Containerization & Deployment Assessment (One-Command Docker Execution)
+- **Judges / Evaluators Experience:** The primary deployment requirement is zero-friction evaluation: judges should clone the repository and run `docker compose up` to start both the Python backend and Next.js frontend without configuring local node, python, or package dependencies.
+- **Local Ollama Integration in Docker:** When running containerized, Docker containers connect to Ollama running on the host via `http://host.docker.internal:11434` (using Docker's `extra_hosts: ["host.docker.internal:host-gateway"]`).
+- **Zero-Dependency Fallback:** If a judge does not have Ollama installed or running, the system automatically falls back to deterministic template generation, ensuring the app works 100% out of the box with zero runtime errors. An optional embedded Ollama container is also provided via `docker compose --profile ollama up`.
 
 ### 2.4 The Recommended Solution: Dual-Mode LLM Gateway
 We implement an abstracted `LLMClient` provider interface supporting two modes without changing business logic:
-1. **Local Mode (Hackathon Demo & Local Dev):** Connects to `http://localhost:11434` (Ollama running `llama3.1:8b` or `qwen2.5:7b`). Zero internet required, fully air-gapped, zero data leakage.
-2. **Cloud Production Mode (Render & Vercel):** Connects to an OpenAI-compatible open-weights private cloud provider (such as **Groq** running `llama-3.1-8b-instant` at 350+ tokens/sec, or a dedicated vLLM/Ollama GPU container). This gives the exact same open-weights model architecture with sub-second response times and zero deployment fragility.
+1. **Local Mode (Default / Air-Gapped):** Connects to `http://host.docker.internal:11434` (Ollama running `llama3.1:8b` or `qwen2.5:7b`). Zero internet required, fully air-gapped, zero data leakage.
+2. **Cloud Mode (Optional High-Throughput):** Connects to an OpenAI-compatible open-weights cloud provider (such as **Groq** running `llama-3.1-8b-instant` at 350+ tokens/sec) if `GROQ_API_KEY` is provided in `.env`.
 
 ```mermaid
 flowchart LR
-    subgraph UI ["Vercel (Frontend)"]
-        A["Next.js App Router (React 19)"]
+    subgraph Docker ["Docker Compose Network"]
+        subgraph UI ["Frontend Container (Port 3000)"]
+            A["Next.js Standalone Runner (node:20-slim)"]
+        end
+        
+        subgraph Core ["Backend Container (Port 8000)"]
+            B["FastAPI 11-Stage Pipeline (Python 3.11)"]
+            C["Dual-Mode LLM Gateway"]
+        end
     end
-    
-    subgraph Core ["Render (Backend Engine)"]
-        B["FastAPI 11-Stage Pipeline"]
-        C["LLM Provider Gateway"]
-    end
-    
-    subgraph DB ["Supabase (MCP Connected)"]
-        D[("PostgreSQL + pgvector")]
-    end
-    
-    subgraph Models ["Dual-Mode LLM Providers"]
-        M1["Local Ollama (llama3.1:8b / qwen2.5:7b)"]
-        M2["Groq / Private vLLM (llama-3.1-8b)"]
+
+    subgraph Host ["Host Machine & External"]
+        M1["Local Ollama (host.docker.internal:11434)"]
+        M2["Cloud LLM / Groq API (Optional)"]
+        D[("Supabase DB / MCP (Optional)")]
     end
 
     A <-->|REST / SSE Streaming| B
     B <-->|Supabase Client & MCP| D
     B --> C
-    C -.->|Local Dev / Air-Gapped| M1
-    C -.->|Cloud Production| M2
+    C -.->|Default Air-Gapped| M1
+    C -.->|Optional Cloud| M2
 ```
 
 ---
@@ -74,10 +74,12 @@ flowchart LR
 
 | Layer | Technology | Justification & Role |
 |---|---|---|
-| **Frontend** | **Next.js 15 (App Router), TypeScript, Tailwind CSS** | Deployed on **Vercel**. Provides fast Server-Side Rendering (SSR), responsive layout, client-side streaming, and rich interactive components. |
+| **Frontend Container** | **Next.js 15 (App Router, Standalone), TypeScript, Tailwind CSS** | Multi-stage Docker container (`node:20-slim`). Serves the web UI on port 3000. |
 | **UI Design System** | **shadcn/ui + `libraries-dev`** | Cyberpunk/SOC dark-mode aesthetic with interactive micro-animations: `border-beam` (active loading), `thinking-orbs` (pipeline stage states), `bot-avatars` (AI agent status), `metal-fx` (critical badges). |
-| **Backend Engine** | **Python 3.11, FastAPI, Pydantic v2, NetworkX** | Deployed on **Render** (Docker Web Service). Python provides robust regex parsing, datetime timezone normalization, graph entity resolution, and deterministic rule evaluation. |
-| **Database & MCP** | **Supabase (PostgreSQL 15 + pgvector)** | Connected via **Supabase MCP**. Stores parsed events, temporal entity graphs, incident dossiers, verified claims, change calendars, and vector embeddings for semantic document search. |
+| **Backend Container** | **Python 3.11, FastAPI, Pydantic v2, NetworkX** | Containerized web service (`python:3.11-slim`) on port 8000 with automated health checks, test suite validation during build, and deterministic rule evaluation. |
+| **Orchestration** | **Docker Compose (`docker-compose.yml`)** | Single command `docker compose up --build` boots the entire stack with automatic service health verification. |
+| **Database & MCP** | **Supabase (PostgreSQL 15 + pgvector)** | Connected via **Supabase MCP** or internal in-memory fallback. Stores parsed events, temporal entity graphs, incident dossiers, verified claims, and audit logs. |
+| **LLM Gateway** | **Ollama (local host) / Groq Llama 3.1 (optional cloud)** | Bridges container to host Ollama (`host.docker.internal:11434`) with automatic deterministic fallback. |
 | **LLM Gateway** | **Ollama (local) / Groq Llama 3.1 8B (cloud fallback)** | Abstracted interface providing privacy, deterministic JSON schemas, and high token throughput. |
 | **Integrity & Auditing**| **SHA-256 Merkle-tree hashing** | Computes cryptographic digest over the raw log slice and final case file for tamper-evident chain of custody. |
 
@@ -630,13 +632,13 @@ gantt
     Detectors, Severity & Runbooks        :02:30, 30m
     Evidence Ledger & Claim Verifier      :03:00, 30m
     
-    section Hour 4: UI & Deployment
+    section Hour 4: UI & Containerization
     Next.js UI & Evidence Inspector       :03:30, 30m
-    Render Backend & Vercel Deploy        :04:00, 30m
+    Docker Compose Multi-Container Setup  :04:00, 30m
 ```
 
 ### Phase 1: Database Setup & MCP Migration (Minutes 0–45)
-- Connect to Supabase via Supabase MCP.
+- Connect to Supabase via Supabase MCP (or internal in-memory fallback for local offline mode).
 - Run SQL migration creating `events`, `entity_nodes`, `entity_edges`, `change_calendar`, `incidents`, `evidence_claims`, `benign_exclusions`, `runbook_actions`, and `reports`.
 - Ingest `02_asset_inventory.md`, `03_severity_matrix.md`, `04_escalation_and_contacts.md`, `05_change_calendar.md`, `18_user_directory.md`, and `20_log_source_coverage.md` into reference tables.
 
@@ -653,15 +655,15 @@ gantt
 ### Phase 4: Evidence Ledger, Runbook & Verifier (Minutes 150–190)
 - Build 3-tier Evidence Ledger (`CONFIRMED`, `SUSPECTED`, `INSUFFICIENT_EVIDENCE`).
 - Constrain runbook actions to exact step IDs (`RB-PHISH-01`, `RB-CRED-02`, `RB-WEB-03`).
-- Implement the dual-mode LLM Client (Ollama local + Groq/vLLM cloud).
+- Implement the dual-mode LLM Client (Ollama local + Groq cloud).
 - Implement the post-generation `ClaimVerifier` to guarantee zero hallucinations.
 
-### Phase 5: Next.js UI, `libraries-dev` & Deployment (Minutes 190–240)
-- Build Next.js UI with dark cyberpunk SOC styling.
+### Phase 5: Next.js UI, `libraries-dev` & Docker Compose (Minutes 190–240)
+- Build Next.js UI with dark cyberpunk SOC styling, 60:40 layout, and separate Settings dialog.
 - Implement the clickable citation pills and the **Evidence Inspector Drawer** with exact line highlighting.
 - Integrate `BorderBeam`, `ThinkingOrb`, `BotAvatar`, and `MetalFx`.
-- Deploy Backend on **Render** (via Dockerfile).
-- Deploy Frontend on **Vercel** pointing to Render backend and Supabase.
+- Configure multi-stage `Dockerfile` for frontend and `backend/Dockerfile`.
+- Orchestrate with `docker-compose.yml` so judges can run `docker compose up --build`.
 
 ---
 
@@ -678,16 +680,22 @@ Follow the implementation plan located at `docs/incident_triage_implementation_p
 "The LLM writes language. Code establishes facts."
 Do not ask the LLM to deduce timestamps or correlate logs. Build an 11-stage deterministic pipeline in Python/FastAPI that outputs a verified JSON Case File, using the LLM only for report prose generation, followed by a code-based Claim Verifier.
 
-### Architecture & Tech Stack:
-1. Backend (to be deployed on Render):
-   - Python 3.11, FastAPI, Pydantic v2, NetworkX, Uvicorn.
-   - Dual-mode LLM Gateway: Ollama (local endpoint `http://localhost:11434` with `llama3.1:8b` or `qwen2.5:7b`) with seamless fallback to Groq / OpenAI-compatible endpoint for cloud deployment.
-2. Database (Connected via Supabase MCP):
-   - Run the PostgreSQL schema defined in Section 4 of the plan.
-   - Store parsed events, entity edges, change calendar, incidents, claims, and reports.
-3. Frontend (to be deployed on Vercel):
-   - Next.js 15 (App Router), TypeScript, Tailwind CSS, shadcn/ui.
+### Architecture & Containerization Stack:
+1. Complete Containerization via Docker Compose:
+   - Root `docker-compose.yml` orchestrates `backend` and `frontend`.
+   - Judges must be able to boot the entire system with a single command:
+     `docker compose up --build`
+   - Access points:
+     * Frontend UI: http://localhost:3000
+     * Backend API & Swagger: http://localhost:8000
+2. Backend (FastAPI in Docker):
+   - Python 3.11, FastAPI, Pydantic v2, NetworkX, Uvicorn (`backend/Dockerfile`).
+   - Dual-mode LLM Gateway: bridges to Ollama running on host via `http://host.docker.internal:11434` with `llama3.1:8b` or `qwen2.5:7b`, with automatic fallback to template generation if Ollama is unreachable.
+3. Frontend (Next.js 15 Standalone in Docker):
+   - Multi-stage `frontend/Dockerfile` (`node:20-slim`) using Next.js standalone runner.
    - Dark-mode SOC dashboard (slate-950 background, JetBrains Mono font for logs, severity badges).
+   - 60:40 screen layout: 60% Left Incident Workspace, 40% Right SOC AI Copilot.
+   - Settings Dialog (clean modal for model switching: Local vs Cloud).
    - Use UI effects from the `libraries-dev` skill:
      * `border-beam`: Animated glow around the active P1 incident card and search input (`size="pulse-inner"` / `size="line"`).
      * `thinking-orbs`: Dynamic agent activity indicator (`state="connecting" | "weaving" | "searching" | "working" | "composing"`).
@@ -707,5 +715,5 @@ Do not ask the LLM to deduce timestamps or correlate logs. Build an 11-stage det
    - Sandbox logs within XML delimiters. Scan for adversarial prompt injection strings in User-Agents or email headers; quarantine and flag as an attack finding.
 
 ### Execution Plan:
-Start by creating the backend services and parsers for `security_triage_data/`, run tests against the 20 files, set up the Supabase tables, and build the Next.js frontend with the Evidence Inspector Drawer. Let's begin!
+Start by reviewing `docker-compose.yml`, run tests against the 20 files in `security_triage_data/`, and build the Next.js frontend with the 60:40 layout, settings modal, and Evidence Inspector Drawer. Let's begin!
 ```

@@ -5,7 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     container_name: orbit-soc-backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
       - PORT=8000
       - LLM_MODE=${LLM_MODE:-auto}
@@ -15,7 +15,7 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.groq.com/openai/v1}
       - LLM_MODEL=${LLM_MODEL:-llama-3.1-8b-instant}
       - LLM_PSEUDONYMIZE=true
-      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001
       - DATA_DIR=/app/security_triage_data
       - EDGE_PACK_DIR=/app/backend/datasets/edge_cases
     extra_hosts:
@@ -37,7 +37,7 @@ services:
         - NEXT_PUBLIC_API_URL=http://localhost:8000
     container_name: orbit-soc-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
